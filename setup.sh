@@ -113,18 +113,11 @@ if [[ "$USER_KEY" == sk-ant-* ]]; then
     DETECTED_ENV_KEY="ANTHROPIC_API_KEY"
     echo "  ✓ 检测到 Anthropic API Key → Claude Sonnet 4"
 elif [[ "$USER_KEY" == sk-* ]]; then
-    # sk- 前缀：可能是 OpenAI 或 DeepSeek
-    if [[ ${#USER_KEY} -gt 80 ]]; then
-        DETECTED_PROVIDER="deepseek"
-        DETECTED_MODEL="deepseek/deepseek-chat"
-        DETECTED_ENV_KEY="DEEPSEEK_API_KEY"
-        echo "  ✓ 检测到 DeepSeek API Key → DeepSeek Chat"
-    else
-        DETECTED_PROVIDER="openai"
-        DETECTED_MODEL="openai/gpt-5.4-mini"
-        DETECTED_ENV_KEY="OPENAI_API_KEY"
-        echo "  ✓ 检测到 OpenAI API Key → GPT-5.4 Mini"
-    fi
+    # sk- 前缀：OpenAI（含 sk-proj-*、sk-svcacct-* 等）
+    DETECTED_PROVIDER="openai"
+    DETECTED_MODEL="openai/gpt-5.4-mini"
+    DETECTED_ENV_KEY="OPENAI_API_KEY"
+    echo "  ✓ 检测到 OpenAI API Key → GPT-5.4 Mini"
 elif [[ "$USER_KEY" == *"."* ]] && [[ ${#USER_KEY} -gt 30 ]]; then
     # 含点号且较长：智谱格式 (hex.base64)
     DETECTED_PROVIDER="zhipuai"
