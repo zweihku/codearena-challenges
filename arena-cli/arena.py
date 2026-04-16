@@ -349,6 +349,7 @@ class ArenaEngine:
                 else:
                     files.append(f"{item.name} ({item.stat().st_size} bytes)")
             output = "\n".join(files) if files else "(空目录)"
+            console.print(f"[dim]{output}[/dim]")
             self.logger.log(
                 event_type="tool_ls",
                 tool_name="list_files",
@@ -362,22 +363,58 @@ class ArenaEngine:
             if not path:
                 return "read_file 缺少 path"
             console.print(f"[dim]AI 工具调用: read_file {path}[/dim]")
-            return tool_read(path, self.work_dir, self.logger)
+            content = tool_read(path, self.work_dir, self.logger)
+            # 展示文件内容（截断长文件）
+            if len(content) > 2000:
+                console.print(Syntax(content[:2000], "python", theme="monokai"))
+                console.print(f"[dim]... ({len(content)} 字符，已截断显示)[/dim]")
+            elif path.endswith(".py"):
+                console.print(Syntax(content, "python", theme="monokai", line_numbers=True))
+            else:
+                console.print(f"[dim]{content[:1000]}[/dim]")
+            return content
 
         if tool_name == "write_file":
             path = str(args.get("path", "")).strip()
             content = str(args.get("content", ""))
             if not path:
                 return "write_file 缺少 path"
-            console.print(f"[dim]AI 工具调用: write_file {path}[/dim]")
-            return tool_edit(path, content, self.work_dir, self.logger)
+            console.print(f"[bold cyan]AI 写入文件: {path}[/bold cyan]")
+            # 展示写入的代码内容
+            lang = "python" if path.endswith(".py") else "text"
+            if path.endswith((".html", ".htm")):
+                lang = "html"
+            elif path.endswith((".js", ".ts")):
+                lang = "javascript"
+            elif path.endswith((".json",)):
+                lang = "json"
+            elif path.endswith((".md",)):
+                lang = "markdown"
+            elif path.endswith((".sh",)):
+                lang = "bash"
+            elif path.endswith((".css",)):
+                lang = "css"
+            elif path.endswith((".yml", ".yaml")):
+                lang = "yaml"
+            elif path.endswith((".txt", ".cfg", ".ini")):
+                lang = "text"
+            if len(content) > 3000:
+                console.print(Syntax(content[:3000], lang, theme="monokai", line_numbers=True))
+                console.print(f"[dim]... ({len(content)} 字符，已截断显示)[/dim]")
+            else:
+                console.print(Syntax(content, lang, theme="monokai", line_numbers=True))
+            result = tool_edit(path, content, self.work_dir, self.logger)
+            console.print(f"[green]{result}[/green]")
+            return result
 
         if tool_name == "run_command":
             command = str(args.get("command", "")).strip()
             if not command:
                 return "run_command 缺少 command"
-            console.print(f"[dim]AI 工具调用: run_command {command}[/dim]")
-            return tool_run(command, self.work_dir, self.logger)
+            console.print(f"[dim]$ {command}[/dim]")
+            output = tool_run(command, self.work_dir, self.logger)
+            console.print(output)
+            return output
 
         return f"未知工具: {tool_name}"
 
