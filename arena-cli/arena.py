@@ -346,6 +346,7 @@ def show_welcome():
     guide = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
     guide.add_column(style="bold cyan", width=18)
     guide.add_column()
+    guide.add_row("config", "配置 AI 模型和 API Key（首次使用必须先配置）")
     guide.add_row("start", "开始挑战 — 登录昵称 → 选择任务 → 进入编程")
     guide.add_row("help", "查看命令帮助")
     guide.add_row("quit", "退出 CodeArena")
@@ -680,17 +681,78 @@ def main():
     # 检测可用挑战
     available_challenges = detect_challenges(base_dir)
 
-    # API key
+    # API key（可以为空，在主界面通过 config 设置）
     provider_config = PROVIDERS[args.provider]
     api_key = args.api_key or os.environ.get(provider_config["env_key"], "")
-    if not api_key:
-        console.print(f"[red]需要设置 {provider_config['env_key']} 环境变量[/red]")
-        sys.exit(1)
-
     model = args.model or provider_config["default_model"]
+    provider = args.provider
+
+    # 保存到一个可变状态，方便 config 命令修改
+    state = {
+        "provider": provider,
+        "model": model,
+        "api_key": api_key,
+    }
+
+    def ensure_api_key() -> bool:
+        """确保 API key 已配置，未配置则引导输入。返回 True 表示已就绪。"""
+        if state["api_key"]:
+            return True
+        console.print()
+        console.print("[yellow]尚未配置 AI 模型 API Key[/yellow]")
+        console.print("[dim]请向出题者获取 API Key，然后输入下方[/dim]")
+        console.print()
+        configure_api()
+        return bool(state["api_key"])
+
+    def configure_api():
+        """交互式配置 API"""
+        console.print()
+        console.print("[bold]配置 AI 模型[/bold]")
+        console.print()
+
+        # 选 provider
+        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
+        t.add_column(style="bold cyan", width=4)
+        t.add_column(width=12)
+        t.add_column()
+        t.add_row("1", "智谱 GLM", "glm-5.1（推荐）")
+        t.add_row("2", "OpenAI", "gpt-4o-mini / gpt-5.4")
+        t.add_row("3", "DeepSeek", "deepseek-chat")
+        console.print(t)
+
+        choice = Prompt.ask("选择模型", choices=["1", "2", "3"], default="1")
+        provider_map = {"1": "zhipu", "2": "openai", "3": "deepseek"}
+        state["provider"] = provider_map[choice]
+        pconf = PROVIDERS[state["provider"]]
+        state["model"] = pconf["default_model"]
+
+        # 如果选了 OpenAI 且想用 5.4
+        if state["provider"] == "openai":
+            m = Prompt.ask("模型名称", default="gpt-4o-mini")
+            state["model"] = m
+
+        # 输入 key
+        console.print()
+        console.print(f"[dim]请输入 {pconf['env_key']}[/dim]")
+        key = Prompt.ask("API Key")
+        key = key.strip()
+        if key:
+            state["api_key"] = key
+            os.environ[pconf["env_key"]] = key
+            console.print(f"[green]✓ 已配置 {state['model']} ({state['provider']})[/green]")
+        else:
+            console.print("[red]未输入 key，跳过[/red]")
 
     # ---- 主界面循环 ----
     show_welcome()
+
+    # 如果已经有 key，显示状态
+    if state["api_key"]:
+        console.print(f"[dim]当前模型: {state['model']} ({state['provider']}) ✓[/dim]")
+    else:
+        console.print("[yellow]⚠ 未配置 API Key，输入 config 配置[/yellow]")
+    console.print()
 
     while True:
         try:
@@ -699,13 +761,19 @@ def main():
             break
 
         if cmd in ("start", "s"):
+            if not ensure_api_key():
+                console.print("[red]需要先配置 API Key 才能开始[/red]")
+                continue
             participant = login()
             challenge_key = select_challenge(available_challenges)
-            run_session(participant, challenge_key, args.provider, model,
-                       api_key, base_dir, args.log_dir)
+            run_session(participant, challenge_key, state["provider"], state["model"],
+                       state["api_key"], base_dir, args.log_dir)
             # 回到主界面
             console.print()
             show_welcome()
+
+        elif cmd in ("config", "c", "设置"):
+            configure_api()
 
         elif cmd in ("help", "h"):
             show_help()
@@ -716,7 +784,7 @@ def main():
 
         elif cmd:
             console.print(f"[yellow]未知命令: {cmd}[/yellow]")
-            console.print("[dim]输入 start 开始，help 查看帮助，quit 退出[/dim]")
+            console.print("[dim]输入 start 开始，config 配置模型，help 帮助，quit 退出[/dim]")
 
 
 if __name__ == "__main__":
