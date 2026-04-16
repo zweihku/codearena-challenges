@@ -5,7 +5,7 @@ AI 编程能力评测平台。clone 下来，一键启动，完成挑战。
 ## 快速开始
 
 ```bash
-git clone https://github.com/Zwei-code/codearena-challenges.git
+git clone https://github.com/zweihku/codearena-challenges.git
 cd codearena-challenges
 ./setup.sh
 ```

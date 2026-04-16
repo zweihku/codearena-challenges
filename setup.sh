@@ -5,7 +5,7 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-GITHUB_REPO="Zwei-code/codearena-challenges"
+GITHUB_REPO="zweihku/codearena-challenges"
 
 echo ""
 echo "  ╔══════════════════════════════════╗"
