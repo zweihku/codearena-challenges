@@ -92,21 +92,68 @@ done
 
 echo "  ✓ 欢迎, $NICKNAME!"
 
-# 检查 API key
-if [ -z "$ZHIPU_API_KEY" ]; then
-    echo ""
-    echo "  请输入出题者提供的 API Key:"
-    read -r -p "  API Key: " USER_KEY
-    if [ -n "$USER_KEY" ]; then
-        export ZHIPU_API_KEY="$USER_KEY"
-    fi
-fi
+# 检查 API key — 智能识别 provider 并切换模型
+echo ""
+echo "  请输入出题者提供的 API Key:"
+read -r -p "  API Key: " USER_KEY
 
-if [ -z "$ZHIPU_API_KEY" ]; then
+if [ -z "$USER_KEY" ]; then
     echo "  ❌ 必须提供 API Key 才能使用 AI 助手"
     exit 1
 fi
-echo "  ✓ API Key 已配置"
+
+# 根据 key 格式自动识别 provider
+DETECTED_PROVIDER=""
+DETECTED_MODEL=""
+DETECTED_ENV_KEY=""
+
+if [[ "$USER_KEY" == sk-ant-* ]]; then
+    DETECTED_PROVIDER="anthropic"
+    DETECTED_MODEL="anthropic/claude-sonnet-4-20250514"
+    DETECTED_ENV_KEY="ANTHROPIC_API_KEY"
+    echo "  ✓ 检测到 Anthropic API Key → Claude Sonnet 4"
+elif [[ "$USER_KEY" == sk-* ]]; then
+    # sk- 前缀：可能是 OpenAI 或 DeepSeek
+    if [[ ${#USER_KEY} -gt 80 ]]; then
+        DETECTED_PROVIDER="deepseek"
+        DETECTED_MODEL="deepseek/deepseek-chat"
+        DETECTED_ENV_KEY="DEEPSEEK_API_KEY"
+        echo "  ✓ 检测到 DeepSeek API Key → DeepSeek Chat"
+    else
+        DETECTED_PROVIDER="openai"
+        DETECTED_MODEL="openai/gpt-5.4-mini"
+        DETECTED_ENV_KEY="OPENAI_API_KEY"
+        echo "  ✓ 检测到 OpenAI API Key → GPT-5.4 Mini"
+    fi
+elif [[ "$USER_KEY" == *"."* ]] && [[ ${#USER_KEY} -gt 30 ]]; then
+    # 含点号且较长：智谱格式 (hex.base64)
+    DETECTED_PROVIDER="zhipuai"
+    DETECTED_MODEL="zhipuai/glm-5.1"
+    DETECTED_ENV_KEY="ZHIPU_API_KEY"
+    echo "  ✓ 检测到智谱 API Key → GLM-5.1"
+else
+    # 默认智谱
+    DETECTED_PROVIDER="zhipuai"
+    DETECTED_MODEL="zhipuai/glm-5.1"
+    DETECTED_ENV_KEY="ZHIPU_API_KEY"
+    echo "  ✓ API Key 已配置（默认使用 GLM-5.1）"
+fi
+
+export "$DETECTED_ENV_KEY=$USER_KEY"
+
+# 更新 opencode.json 的 model 配置
+if command -v python3 &>/dev/null; then
+    python3 -c "
+import json, sys
+with open('$REPO_ROOT/opencode.json', 'r') as f:
+    config = json.load(f)
+config['model'] = '$DETECTED_MODEL'
+with open('$REPO_ROOT/opencode.json', 'w') as f:
+    json.dump(config, f, indent=2, ensure_ascii=False)
+" 2>/dev/null
+elif command -v sed &>/dev/null; then
+    sed -i '' "s|\"model\":.*|\"model\": \"$DETECTED_MODEL\",|" "$REPO_ROOT/opencode.json" 2>/dev/null
+fi
 
 # ============================================================
 # Step 3: 创建专属分支
