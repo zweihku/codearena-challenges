@@ -237,16 +237,22 @@ if [ -d "$CHALLENGE_DIR" ]; then
         cp -r "$d" "$RESULTS_DIR/code/" 2>/dev/null || true
     done
 
-    # 导出 commit 历史（空文件 = 用户未做版本管理，本身也是评测信号）
+    # 导出参赛者自己的 commit 历史（只算分支创建后的新增 commit，排除 main 上的历史）
     cd "$REPO_ROOT"
-    COMMIT_DATA=$(git log --pretty=format:'{"hash":"%h","date":"%ai","message":"%s"}' -- challenges/ 2>/dev/null)
+    # 找到分支从 main 分出去的点，只导出之后的 commit
+    MERGE_BASE=$(git merge-base main "$BRANCH" 2>/dev/null || echo "")
+    if [ -n "$MERGE_BASE" ]; then
+        COMMIT_DATA=$(git log "${MERGE_BASE}..HEAD" --pretty=format:'{"hash":"%h","date":"%ai","message":"%s"}' -- challenges/ 2>/dev/null)
+    else
+        COMMIT_DATA=""
+    fi
     if [ -n "$COMMIT_DATA" ]; then
         echo "$COMMIT_DATA" | sed 's/$/,/' | sed '1s/^/[/' | sed '$ s/,$/]/' > "$RESULTS_DIR/commits.json"
         COMMIT_COUNT=$(echo "$COMMIT_DATA" | wc -l | tr -d ' ')
-        echo "  ✓ Git 历史: ${COMMIT_COUNT} 条 commit"
+        echo "  ✓ Git 历史: ${COMMIT_COUNT} 条 commit（参赛者新增）"
     else
         echo '{"git_managed": false, "note": "参赛者未使用 git 管理代码"}' > "$RESULTS_DIR/commits.json"
-        echo "  ⚠ 未检测到 git commit（将记录此信息）"
+        echo "  ⚠ 未检测到参赛者 commit（将记录此信息）"
     fi
 fi
 
