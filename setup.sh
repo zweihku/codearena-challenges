@@ -344,7 +344,7 @@ echo "  ✓ 结果已收集到 $RESULTS_DIR/"
 # Git 提交并推送
 echo "  正在上传结果..."
 cd "$REPO_ROOT"
-git add "results/$NICKNAME/" challenges/ 2>/dev/null || true
+git add -f "results/$NICKNAME/" challenges/ 2>/dev/null || true
 git commit -m "results: $NICKNAME submission" 2>/dev/null || true
 
 echo ""
