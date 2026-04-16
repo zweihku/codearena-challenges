@@ -21,3 +21,9 @@ Thumbs.db
 
 # 参赛者状态文件
 .participant
+
+# 测试日志
+arena-cli/arena-logs/
+arena-logs/
+results/
+._*
