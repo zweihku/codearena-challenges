@@ -570,16 +570,12 @@ def run_session(participant: str, challenge_key: str, provider: str,
             for t in tasks:
                 if t["num"] == task_num:
                     t["done"] = True
-            # 自动 commit
-            msg = f"task{task_num}: done"
-            console.print(f"[dim]$ git add -A && git commit -m \"{msg}\"[/dim]")
-            tool_run("git add -A", repo_root, logger)
-            output = tool_run(f'git commit -m "{msg}"', repo_root, logger)
-            console.print(output)
             done_count = sum(1 for v in task_status.values() if v)
-            console.print(f"[green]✓ Task {task_num} 完成！({done_count}/{len(tasks)})[/green]")
+            console.print(f"[green]✓ Task {task_num} 已标记完成 ({done_count}/{len(tasks)})[/green]")
+            # 只记录到日志，不做任何 git 操作
             logger.log(event_type="task_finish", tool_name="finish",
-                       tool_input=f"task{task_num}", tool_output=msg)
+                       tool_input=f"task{task_num}",
+                       tool_output=f"participant marked task {task_num} as done")
             show_tasks()
             continue
 
