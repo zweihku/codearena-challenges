@@ -117,11 +117,15 @@ if [ -z "$ZHIPU_API_KEY" ]; then
     fi
 fi
 
+# 保存昵称到文件，供 arena.py 读取（跳过登录）
+echo "$NICKNAME" > "$REPO_ROOT/.participant"
+
 # 启动 CLI
 cd "$REPO_ROOT"
 python3 arena-cli/arena.py \
     --challenges-dir "$REPO_ROOT" \
-    --log-dir "$RESULTS_DIR"
+    --log-dir "$RESULTS_DIR" \
+    --participant "$NICKNAME"
 
 # ============================================================
 # 退出后自动收集结果并上传

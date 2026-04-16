@@ -654,6 +654,8 @@ def main():
     parser.add_argument("--challenges-dir", default=None,
                         help="challenges 所在目录（默认自动检测）")
     parser.add_argument("--log-dir", default="./arena-logs")
+    parser.add_argument("--participant", default=None,
+                        help="参赛者昵称（由 setup.sh 传入，跳过登录）")
     args = parser.parse_args()
 
     # 检测 challenges 目录
@@ -764,7 +766,12 @@ def main():
             if not ensure_api_key():
                 console.print("[red]需要先配置 API Key 才能开始[/red]")
                 continue
-            participant = login()
+            # 如果 setup.sh 已传入昵称，跳过登录
+            if args.participant:
+                participant = args.participant
+                console.print(f"[green]参赛者: {participant}[/green]")
+            else:
+                participant = login()
             challenge_key = select_challenge(available_challenges)
             run_session(participant, challenge_key, state["provider"], state["model"],
                        state["api_key"], base_dir, args.log_dir)
