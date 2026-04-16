@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CodeArena CLI — 内部测试用 AI 编程助手
+Zwei's CodeArena CLI — AI 编程能力评测
 
 一个带完整交互日志的 AI 编程助手，用于 hackathon 评测。
 参赛者用它和 AI 对话、读写文件、执行命令，所有交互被记录。
@@ -110,7 +110,7 @@ def detect_challenges(base_dir: Path) -> dict:
 
     return detected if detected else CHALLENGES
 
-SYSTEM_PROMPT = """你是 CodeArena AI 编程助手，帮助参赛者完成 hackathon 编程挑战。
+SYSTEM_PROMPT = """你是 Zwei's CodeArena AI 编程助手，帮助参赛者完成 hackathon 编程挑战。
 
 你的行为准则：
 1. 帮助参赛者理解题目、调试代码、给出建议
@@ -338,7 +338,7 @@ def show_welcome():
     title.append("  ██║     ██║   ██║██║  ██║██╔══╝  \n", style="bold cyan")
     title.append("  ╚██████╗╚██████╔╝██████╔╝███████╗\n", style="bold cyan")
     title.append("   ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝\n", style="bold cyan")
-    title.append("        A R E N A", style="bold white")
+    title.append("     Z w e i ' s   A R E N A", style="bold white")
 
     console.print(Panel(title, border_style="cyan", padding=(1, 4)))
     console.print()
@@ -349,7 +349,7 @@ def show_welcome():
     guide.add_row("config", "配置 AI 模型和 API Key（首次使用必须先配置）")
     guide.add_row("start", "开始挑战 — 登录昵称 → 选择任务 → 进入编程")
     guide.add_row("help", "查看命令帮助")
-    guide.add_row("quit", "退出 CodeArena")
+    guide.add_row("quit", "退出")
 
     console.print(Panel(guide, title="[bold]命令指南[/bold]", border_style="dim"))
     console.print()
@@ -357,7 +357,7 @@ def show_welcome():
 
 def show_help():
     """显示详细帮助"""
-    t = Table(box=box.ROUNDED, title="CodeArena 命令", title_style="bold")
+    t = Table(box=box.ROUNDED, title="Zwei's CodeArena 命令", title_style="bold")
     t.add_column("命令", style="cyan", width=22)
     t.add_column("说明")
 
@@ -647,7 +647,7 @@ def run_session(participant: str, challenge_key: str, provider: str,
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="CodeArena CLI")
+    parser = argparse.ArgumentParser(description="Zwei's CodeArena CLI")
     parser.add_argument("--provider", default="zhipu", choices=list(PROVIDERS.keys()))
     parser.add_argument("--model", default=None)
     parser.add_argument("--api-key", default=None)
@@ -756,7 +756,7 @@ def main():
 
     while True:
         try:
-            cmd = Prompt.ask("[bold cyan]CodeArena[/bold cyan]", default="").strip().lower()
+            cmd = Prompt.ask("[bold cyan]Zwei's CodeArena[/bold cyan]", default="").strip().lower()
         except (EOFError, KeyboardInterrupt):
             break
 
