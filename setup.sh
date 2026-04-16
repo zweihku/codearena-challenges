@@ -134,12 +134,22 @@ echo "  正在收集结果..."
 CHALLENGE_DIR="$REPO_ROOT/challenges"
 if [ -d "$CHALLENGE_DIR" ]; then
     mkdir -p "$RESULTS_DIR/code"
-    # 复制参赛者写的代码（排除测试和题目文件）
-    for f in "$CHALLENGE_DIR"/*.py; do
-        [ -f "$f" ] && [[ "$(basename $f)" != test_* ]] && cp "$f" "$RESULTS_DIR/code/"
+    # 复制参赛者写的所有文件（排除测试和题目文件）
+    for f in "$CHALLENGE_DIR"/*; do
+        fname="$(basename "$f")"
+        [ -f "$f" ] || continue
+        # 排除出题者的文件
+        [[ "$fname" == "CHALLENGE.md" ]] && continue
+        [[ "$fname" == test_* ]] && continue
+        cp "$f" "$RESULTS_DIR/code/"
     done
-    # 复制 README（如果参赛者写了的话）
-    [ -f "$CHALLENGE_DIR/README.md" ] && cp "$CHALLENGE_DIR/README.md" "$RESULTS_DIR/code/"
+    # 复制子目录（starter 等）
+    for d in "$CHALLENGE_DIR"/*/; do
+        dname="$(basename "$d")"
+        [[ "$dname" == "starter" ]] && continue
+        [[ "$dname" == "__pycache__" ]] && continue
+        cp -r "$d" "$RESULTS_DIR/code/" 2>/dev/null || true
+    done
 
     # 导出 commit 历史
     cd "$REPO_ROOT"
@@ -147,8 +157,14 @@ if [ -d "$CHALLENGE_DIR" ]; then
 
     # 导出测试结果
     cd "$CHALLENGE_DIR"
-    python3 -m pytest test_challenge.py -v --tb=no -q 2>&1 > "$RESULTS_DIR/test_results.txt" || true
+    python3 -m pytest test_challenge.py -v --tb=short 2>&1 > "$RESULTS_DIR/test_results.txt" || true
     cd "$REPO_ROOT"
+
+    # AI 交互日志已在 results 目录下（arena-cli 直接写到 --log-dir）
+    # 确认日志存在
+    if ls "$RESULTS_DIR"/*.jsonl 1>/dev/null 2>&1; then
+        echo "  ✓ AI 交互日志已保存"
+    fi
 fi
 
 echo "  ✓ 结果已收集到 $RESULTS_DIR/"

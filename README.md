@@ -1,4 +1,4 @@
-# CodeArena 编程挑战
+# Zwei's CodeArena
 
 AI 编程能力评测平台。clone 下来，一键启动，完成挑战。
 
