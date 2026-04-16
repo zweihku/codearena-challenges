@@ -38,7 +38,7 @@ except ImportError as e:
 
 console = Console()
 
-API_TIMEOUT_SEC = 45.0
+API_TIMEOUT_SEC = 120.0
 API_MAX_RETRIES = 0
 MAX_TOOL_ROUNDS = 20
 
@@ -442,13 +442,18 @@ class ArenaEngine:
 
             start = time.time()
             try:
+                # 最后 2 轮不传 tools，强制 AI 给出文字回复而不是继续调工具
+                is_final_rounds = round_index >= MAX_TOOL_ROUNDS - 1
+                if is_final_rounds and tool_schemas:
+                    console.print(f"[dim]（第 {round_index}/{MAX_TOOL_ROUNDS} 轮，要求 AI 给出回复）[/dim]")
+
                 request_kwargs = {
                     "model": self.model,
                     "messages": api_messages,
                     "max_tokens": 32768,
                     "temperature": 0.7,
                 }
-                if tool_schemas:
+                if tool_schemas and not is_final_rounds:
                     request_kwargs["tools"] = tool_schemas
                 response = self.client.chat.completions.create(**request_kwargs)
             except Exception as e:
