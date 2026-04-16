@@ -1,94 +1,41 @@
-# 天气服务
+# 客服机器人
 
-**总时间：** 2 小时
-**AI 工具：** 随意使用
+在一个高频咨询场景中，你需要为客服团队打造一套可用的机器人能力，帮助用户更快找到答案，并让人工客服接手更顺畅。  
+本题关注的是逐步完善一个客服机器人系统，从基础问答到更完整的服务流程。
 
-## 规则
+## 规则说明
 
-- 按顺序做，每个 Task 在上一个的基础上扩展
-- 每完成一个 Task，commit 一次（`/commit "task1: done"`）
-- 做到哪算哪
-- 每个 Task 有自动化测试：`/test N` 或 `pytest test_challenge.py -v -k taskN`
+1. 按顺序完成 6 个 Task。  
+2. 每完成一个 Task，提交一次 commit。  
+3. 做到哪算哪，前一个 Task 的结果会成为后一个 Task 的基础。  
+4. 系统已提供 AI 编程助手，参赛者可自行决定如何完成任务。  
 
----
+## Task 1：基础对话入口
 
-## Task 1：基础查询
+实现一个能够接收用户消息并返回回应的客服机器人入口。  
+目标是让系统具备最基础的可交互对话能力。
 
-实现 `weather.py`，查询城市天气并输出：
+## Task 2：常见问题处理
 
-```bash
-python weather.py Beijing
-# 输出示例：Beijing | 25°C | 风速 3.2km/h
-```
+在基础对话能力上，补充对常见咨询内容的识别与回复。  
+目标是让机器人能够覆盖一部分高频客服问题。
 
-API（免费，无需 key）：
-- 城市转坐标：`https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1`
-- 查天气：`https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true`
+## Task 3：上下文连续对话
 
----
+在常见问题处理的基础上，让机器人能够延续对话语境。  
+目标是让后续回复能够和前文内容保持一致。
 
-## Task 2：多城市 + 错误处理
+## Task 4：人工转接
 
-支持更多场景：
+在连续对话的基础上，增加将会话转给人工客服的能力。  
+目标是让机器人在无法继续处理时能够顺利交接。
 
-```bash
-python weather.py Beijing Tokyo London   # 多个城市，每个一行
-python weather.py                        # 无参数时给出提示
-python weather.py xyznotacity            # 查不到时友好提示
-```
+## Task 5：会话记录与查询
 
-要求：不出现 Python traceback。
+在人工转接的基础上，补充对会话过程的记录与查看能力。  
+目标是让客服团队能够回溯用户与机器人的交互内容。
 
----
+## Task 6：服务闭环
 
-## Task 3：JSON 输出 + 代码整理
-
-加 `--json` 参数：
-
-```bash
-python weather.py Beijing --json
-# 输出 JSON 对象
-
-python weather.py Beijing Tokyo --json
-# 输出 JSON 数组
-```
-
-同时整理代码：拆出独立的函数，main 保持简洁。
-
----
-
-## Task 4：本地缓存
-
-加缓存，避免重复请求同一城市：
-
-```bash
-python weather.py Beijing              # 第一次调 API
-python weather.py Beijing              # 第二次读缓存
-python weather.py Beijing --no-cache   # 跳过缓存
-python weather.py --clear-cache        # 清缓存
-```
-
-缓存有过期时间（10 分钟），命中时提示 `(cached)`。
-
----
-
-## Task 5：并发查询
-
-10 个城市不该等 10 秒。用异步实现并发：
-
-```bash
-python weather.py Beijing Tokyo London Paris Berlin Rome Madrid Seoul Sydney Mumbai
-# 应该 2-3 秒返回
-```
-
-输出顺序保持和输入一致，某个城市出错不影响其他。
-
----
-
-## Task 6：完善
-
-- `--help` 帮助信息
-- `--forecast 3` 未来 N 天预报
-- `--units imperial` 华氏度
-- 函数加类型注解
-- 写 `README.md`
+在会话记录与查询的基础上，完善从咨询、转接到结束的完整服务流程。  
+目标是让整个客服机器人系统形成可持续使用的闭环。
