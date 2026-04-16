@@ -28,12 +28,41 @@ if ! command -v git &>/dev/null; then
 fi
 echo "  ✓ Git $(git --version | cut -d' ' -f3)"
 
-# CodeArena binary
+# CodeArena binary — 如果不存在则从 GitHub Release 下载
 CODEARENA_BIN="$REPO_ROOT/bin/codearena"
 if [ ! -x "$CODEARENA_BIN" ]; then
-    echo "  ❌ CodeArena CLI 未找到"
-    echo "  请确保 bin/codearena 文件存在且有执行权限"
-    exit 1
+    echo "  CodeArena CLI 未找到，正在从 GitHub 下载..."
+    mkdir -p "$REPO_ROOT/bin"
+
+    # 检测系统架构
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        arm64|aarch64) ARCH_SUFFIX="arm64" ;;
+        x86_64|amd64)  ARCH_SUFFIX="x64" ;;
+        *)             ARCH_SUFFIX="$ARCH" ;;
+    esac
+
+    ASSET_NAME="codearena"
+    DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/latest/download/$ASSET_NAME"
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$DOWNLOAD_URL" -o "$CODEARENA_BIN"
+    elif command -v wget &>/dev/null; then
+        wget -q "$DOWNLOAD_URL" -O "$CODEARENA_BIN"
+    else
+        echo "  ❌ 需要 curl 或 wget 来下载 CodeArena CLI"
+        exit 1
+    fi
+
+    chmod +x "$CODEARENA_BIN"
+
+    if [ ! -x "$CODEARENA_BIN" ]; then
+        echo "  ❌ 下载失败，请手动下载:"
+        echo "     $DOWNLOAD_URL"
+        exit 1
+    fi
+    echo "  ✓ CodeArena CLI 已下载"
 fi
 echo "  ✓ CodeArena CLI v$($CODEARENA_BIN --version 2>/dev/null || echo '?')"
 
