@@ -13,7 +13,9 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +37,19 @@ except ImportError as e:
     sys.exit(1)
 
 console = Console()
+
+API_TIMEOUT_SEC = 45.0
+API_MAX_RETRIES = 0
+MAX_TOOL_ROUNDS = 20
+
+
+@dataclass
+class ChatResult:
+    text: str
+    latency_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    error: str = ""
 
 # ============================================================
 # 配置
@@ -116,7 +131,9 @@ SYSTEM_PROMPT = """你是 Zwei's CodeArena AI 编程助手，帮助参赛者完�
 1. 帮助参赛者理解题目、调试代码、给出建议
 2. 可以直接写代码，但鼓励参赛者理解每一步
 3. 当参赛者问你要完整答案时，先问他思路，再补充
-4. 回复简洁，代码直接给，不要过多解释
+4. 以推进任务为目标给出完整、可执行的回复；需要时直接给步骤、命令、代码和修改建议
+5. 除非用户明确要求简短，否则不要只回一句泛泛的提示
+6. 当你需要查看文件、修改代码、列目录或执行命令时，直接调用工具；不要只说“我来看看/我来读取”而不真正执行
 
 你可以使用以下命令帮参赛者操作：
 - 读取文件内容并分析
@@ -136,6 +153,7 @@ class InteractionLogger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / f"{participant}.jsonl"
+        self.api_log_file = self.log_dir / f"{participant}_api.jsonl"
         self.participant = participant
         self.seq = 0
         self.session_id = f"session_{int(time.time())}"
@@ -169,6 +187,17 @@ class InteractionLogger:
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+    def log_api(self, event_type: str, payload: dict):
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": self.session_id,
+            "participant": self.participant,
+            "event_type": event_type,
+            **payload,
+        }
+        with open(self.api_log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
     def get_stats(self) -> dict:
         if not self.log_file.exists():
             return {"total": 0, "chats": 0, "tools": 0}
@@ -186,7 +215,13 @@ class ArenaEngine:
     def __init__(self, provider: str, model: str, api_key: str, work_dir: str,
                  challenge: dict, logger: InteractionLogger):
         config = PROVIDERS[provider]
-        self.client = OpenAI(api_key=api_key, base_url=config["base_url"])
+        self.base_url = config["base_url"]
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=self.base_url,
+            timeout=API_TIMEOUT_SEC,
+            max_retries=API_MAX_RETRIES,
+        )
         self.model = model
         self.provider = provider
         self.work_dir = Path(work_dir)
@@ -206,51 +241,295 @@ class ArenaEngine:
 
         self.system_prompt = system
 
-    def chat(self, user_input: str) -> str:
+    def _tool_schemas(self) -> list[dict]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_files",
+                    "description": "列出当前工作目录或其子目录中的文件和文件夹",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "相对工作目录的路径，留空表示当前工作目录",
+                            }
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "读取某个文件的完整内容",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "相对工作目录的文件路径",
+                            }
+                        },
+                        "required": ["path"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "description": "把完整内容写入某个文件，可用于创建或覆盖文件",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "相对工作目录的文件路径",
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "要写入文件的完整内容",
+                            },
+                        },
+                        "required": ["path", "content"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_command",
+                    "description": "在当前工作目录执行 shell 命令，例如 pytest、python、git 等",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "要执行的 shell 命令",
+                            }
+                        },
+                        "required": ["command"],
+                    },
+                },
+            },
+        ]
+
+    def _tool_call_to_dict(self, tool_call) -> dict:
+        return {
+            "id": tool_call.id,
+            "type": "function",
+            "function": {
+                "name": tool_call.function.name,
+                "arguments": tool_call.function.arguments,
+            },
+        }
+
+    def _execute_tool_call(self, tool_name: str, arguments_json: str) -> str:
+        try:
+            args = json.loads(arguments_json or "{}")
+        except json.JSONDecodeError:
+            return f"工具参数解析失败: {arguments_json}"
+
+        if tool_name == "list_files":
+            path = str(args.get("path", "")).strip()
+            console.print(f"[dim]AI 工具调用: list_files {path or '.'}[/dim]")
+            target = self.work_dir / path if path else self.work_dir
+            if not target.exists():
+                return f"目录不存在: {path or '.'}"
+            if not target.is_dir():
+                return f"不是目录: {path or '.'}"
+            files = []
+            for item in sorted(target.iterdir()):
+                if item.name.startswith("."):
+                    continue
+                if item.is_dir():
+                    files.append(f"{item.name}/")
+                else:
+                    files.append(f"{item.name} ({item.stat().st_size} bytes)")
+            output = "\n".join(files) if files else "(空目录)"
+            self.logger.log(
+                event_type="tool_ls",
+                tool_name="list_files",
+                tool_input=path or ".",
+                tool_output=output[:1000],
+            )
+            return output
+
+        if tool_name == "read_file":
+            path = str(args.get("path", "")).strip()
+            if not path:
+                return "read_file 缺少 path"
+            console.print(f"[dim]AI 工具调用: read_file {path}[/dim]")
+            return tool_read(path, self.work_dir, self.logger)
+
+        if tool_name == "write_file":
+            path = str(args.get("path", "")).strip()
+            content = str(args.get("content", ""))
+            if not path:
+                return "write_file 缺少 path"
+            console.print(f"[dim]AI 工具调用: write_file {path}[/dim]")
+            return tool_edit(path, content, self.work_dir, self.logger)
+
+        if tool_name == "run_command":
+            command = str(args.get("command", "")).strip()
+            if not command:
+                return "run_command 缺少 command"
+            console.print(f"[dim]AI 工具调用: run_command {command}[/dim]")
+            return tool_run(command, self.work_dir, self.logger)
+
+        return f"未知工具: {tool_name}"
+
+    def chat(self, user_input: str, allow_tools: bool = True) -> ChatResult:
         self.messages.append({"role": "user", "content": user_input})
 
         api_messages = [{"role": "system", "content": self.system_prompt}] + self.messages
+        tool_schemas = self._tool_schemas() if allow_tools else None
 
-        start = time.time()
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=api_messages,
-                max_tokens=8192,
-                temperature=0.7,
+        for round_index in range(1, MAX_TOOL_ROUNDS + 1):
+            self.logger.log_api(
+                event_type="api_request_start",
+                payload={
+                    "provider": self.provider,
+                    "model": self.model,
+                    "base_url": self.base_url,
+                    "timeout_sec": API_TIMEOUT_SEC,
+                    "max_retries": API_MAX_RETRIES,
+                    "message_count": len(api_messages),
+                    "user_preview": user_input[:200],
+                    "allow_tools": allow_tools,
+                    "round_index": round_index,
+                },
             )
-        except Exception as e:
-            error_msg = f"API 调用失败: {e}"
-            self.messages.pop()  # 回滚
-            return error_msg
 
-        latency = int((time.time() - start) * 1000)
-        text = response.choices[0].message.content or ""
-        usage = response.usage
+            start = time.time()
+            try:
+                request_kwargs = {
+                    "model": self.model,
+                    "messages": api_messages,
+                    "max_tokens": 32768,
+                    "temperature": 0.7,
+                }
+                if tool_schemas:
+                    request_kwargs["tools"] = tool_schemas
+                response = self.client.chat.completions.create(**request_kwargs)
+            except Exception as e:
+                latency = int((time.time() - start) * 1000)
+                self.logger.log_api(
+                    event_type="api_request_error",
+                    payload={
+                        "provider": self.provider,
+                        "model": self.model,
+                        "base_url": self.base_url,
+                        "latency_ms": latency,
+                        "error_type": type(e).__name__,
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                        "allow_tools": allow_tools,
+                        "round_index": round_index,
+                    },
+                )
+                error_msg = f"API 调用失败: {e}（详细日志: {self.logger.api_log_file}）"
+                self.messages.pop()  # 回滚
+                return ChatResult(text=error_msg, error=error_msg)
 
-        self.messages.append({"role": "assistant", "content": text})
+            latency = int((time.time() - start) * 1000)
+            message = response.choices[0].message
+            raw_text = message.content
+            if isinstance(raw_text, str):
+                text = raw_text
+            else:
+                text = str(raw_text or "")
+            usage = response.usage
+            tool_calls = list(message.tool_calls or [])
 
-        # 日志
-        self.logger.log(
-            event_type="chat",
-            model=self.model,
-            request_msgs=[{"role": "user", "content": user_input}],
-            response_text=text,
-            latency_ms=latency,
-            tokens={
-                "input": usage.prompt_tokens if usage else 0,
-                "output": usage.completion_tokens if usage else 0,
+            self.logger.log_api(
+                event_type="api_request_success",
+                payload={
+                    "provider": self.provider,
+                    "model": self.model,
+                    "base_url": self.base_url,
+                    "latency_ms": latency,
+                    "input_tokens": usage.prompt_tokens if usage else 0,
+                    "output_tokens": usage.completion_tokens if usage else 0,
+                    "response_preview": text[:300],
+                    "tool_call_count": len(tool_calls),
+                    "allow_tools": allow_tools,
+                    "round_index": round_index,
+                },
+            )
+
+            if allow_tools and tool_calls:
+                assistant_message = {
+                    "role": "assistant",
+                    "content": text or "",
+                    "tool_calls": [self._tool_call_to_dict(tc) for tc in tool_calls],
+                }
+                api_messages.append(assistant_message)
+                self.messages.append(assistant_message)
+
+                for tool_call in tool_calls:
+                    result = self._execute_tool_call(
+                        tool_call.function.name,
+                        tool_call.function.arguments,
+                    )
+                    tool_message = {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result,
+                    }
+                    api_messages.append(tool_message)
+                    self.messages.append(tool_message)
+                continue
+
+            final_text = text.strip() or "(AI 返回了空回复)"
+            self.messages.append({"role": "assistant", "content": final_text})
+            self.logger.log(
+                event_type="chat",
+                model=self.model,
+                request_msgs=[{"role": "user", "content": user_input}],
+                response_text=final_text,
+                latency_ms=latency,
+                tokens={
+                    "input": usage.prompt_tokens if usage else 0,
+                    "output": usage.completion_tokens if usage else 0,
+                },
+            )
+            return ChatResult(
+                text=final_text,
+                latency_ms=latency,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+            )
+
+        timeout_msg = f"AI 调用了过多轮工具仍未完成（上限 {MAX_TOOL_ROUNDS} 轮）"
+        self.logger.log_api(
+            event_type="api_request_error",
+            payload={
+                "provider": self.provider,
+                "model": self.model,
+                "base_url": self.base_url,
+                "error_type": "ToolLoopLimit",
+                "error": timeout_msg,
+                "allow_tools": allow_tools,
+                "round_index": MAX_TOOL_ROUNDS,
             },
         )
-
-        return text
+        return ChatResult(text=timeout_msg, error=timeout_msg)
 
     def switch_model(self, new_model: str, new_provider: str = None):
         if new_provider and new_provider in PROVIDERS:
             config = PROVIDERS[new_provider]
             api_key = os.environ.get(config["env_key"], "")
             if api_key:
-                self.client = OpenAI(api_key=api_key, base_url=config["base_url"])
+                self.base_url = config["base_url"]
+                self.client = OpenAI(
+                    api_key=api_key,
+                    base_url=self.base_url,
+                    timeout=API_TIMEOUT_SEC,
+                    max_retries=API_MAX_RETRIES,
+                )
                 self.provider = new_provider
             else:
                 return f"错误: 未设置 {config['env_key']}"
@@ -325,6 +604,26 @@ def tool_ls(work_dir: Path) -> str:
     return "\n".join(files) if files else "(空目录)"
 
 
+def run_ai_chat(engine: ArenaEngine, prompt: str, waiting_text: str = "AI 思考中...",
+                allow_tools: bool = True) -> ChatResult:
+    """运行一次 AI 对话，确保等待态和返回统计都明确可见"""
+    console.print(f"[dim]{waiting_text}（模型: {engine.model}）[/dim]")
+    with console.status(f"[cyan]{waiting_text}[/cyan]"):
+        result = engine.chat(prompt, allow_tools=allow_tools)
+
+    if result.error:
+        console.print(f"[red]{result.text}[/red]")
+        return result
+
+    console.print(
+        "[dim]"
+        f"AI 回复完成 | 用时 {result.latency_ms / 1000:.1f}s | "
+        f"输入 {result.input_tokens} tokens | 输出 {result.output_tokens} tokens"
+        "[/dim]"
+    )
+    return result
+
+
 # ============================================================
 # 主界面
 # ============================================================
@@ -362,7 +661,7 @@ def show_help():
     t.add_column("说明")
 
     t.add_row("[bold]/task[/bold]", "查看 Task 列表和完成状态")
-    t.add_row("[bold]/finish[/bold] N", "标记 Task N 完成（自动 commit）")
+    t.add_row("[bold]/finish[/bold] N", "标记 Task N 完成")
     t.add_row("[bold]/taskmd[/bold]", "查看完整挑战题目")
     t.add_row("[bold]/read[/bold] <文件>", "读取文件内容")
     t.add_row("[bold]/edit[/bold] <文件>", "让 AI 编辑文件")
@@ -666,11 +965,17 @@ def run_session(participant: str, challenge_key: str, provider: str,
             else:
                 ai_prompt = f"以下是 {filepath} 的当前内容：\n\n```\n{content}\n```\n\n请修改这个文件。给出修改后的完整文件内容，用 ```python 代码块包裹。"
 
-            console.print(f"[dim]正在让 AI 编辑 {filepath}...[/dim]")
-            response = engine.chat(ai_prompt)
+            result = run_ai_chat(
+                engine,
+                ai_prompt,
+                f"正在让 AI 编辑 {filepath}...",
+                allow_tools=False,
+            )
+            if result.error:
+                continue
 
             # 从 AI 回复中提取代码块
-            code_match = re.search(r'```(?:\w+)?\n(.*?)```', response, re.DOTALL)
+            code_match = re.search(r'```(?:\w+)?\n(.*?)```', result.text, re.DOTALL)
             if code_match:
                 new_content = code_match.group(1)
                 if Confirm.ask(f"AI 生成了 {len(new_content)} 字符的代码，写入 {filepath}?"):
@@ -679,7 +984,7 @@ def run_session(participant: str, challenge_key: str, provider: str,
                 else:
                     console.print("[yellow]已取消[/yellow]")
             else:
-                console.print(Markdown(response))
+                console.print(Markdown(result.text))
             continue
 
         elif user_input.startswith("/"):
@@ -688,11 +993,13 @@ def run_session(participant: str, challenge_key: str, provider: str,
             continue
 
         # ---- 普通对话 ----
-        with console.status("[cyan]AI 思考中...[/cyan]"):
-            response = engine.chat(user_input)
+        result = run_ai_chat(engine, user_input)
+        if result.error:
+            console.print()
+            continue
 
         console.print()
-        console.print(Markdown(response))
+        console.print(Markdown(result.text))
         console.print()
 
     # ---- 退出 ----
