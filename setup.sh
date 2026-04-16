@@ -4,12 +4,14 @@
 
 set -e
 
+# Ctrl+C 只退出 CodeArena CLI，不中断后续收集/上传流程
+
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 GITHUB_REPO="zweihku/codearena-challenges"
 
 echo ""
 echo "  ╔══════════════════════════════════╗"
-echo "  ║       CodeArena 挑战启动         ║"
+echo "  ║     Zwei's CodeArena 挑战启动    ║"
 echo "  ╚══════════════════════════════════╝"
 echo ""
 
@@ -17,46 +19,39 @@ echo ""
 # Step 1: 检查环境
 # ============================================================
 
-echo "[1/5] 检查环境..."
-
-# Python
-if ! command -v python3 &>/dev/null; then
-    echo "❌ 需要 Python 3.10+。请先安装 Python。"
-    exit 1
-fi
-PY_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-echo "  ✓ Python $PY_VERSION"
+echo "[1/4] 检查环境..."
 
 # Git
 if ! command -v git &>/dev/null; then
-    echo "❌ 需要 Git。请先安装 Git。"
+    echo "  ❌ 需要 Git。请先安装 Git。"
     exit 1
 fi
 echo "  ✓ Git $(git --version | cut -d' ' -f3)"
 
-# ============================================================
-# Step 2: 安装依赖
-# ============================================================
+# CodeArena binary
+CODEARENA_BIN="$REPO_ROOT/bin/codearena"
+if [ ! -x "$CODEARENA_BIN" ]; then
+    echo "  ❌ CodeArena CLI 未找到"
+    echo "  请确保 bin/codearena 文件存在且有执行权限"
+    exit 1
+fi
+echo "  ✓ CodeArena CLI v$($CODEARENA_BIN --version 2>/dev/null || echo '?')"
 
-echo "[2/5] 安装依赖..."
-pip install -q openai rich prompt_toolkit requests httpx 2>/dev/null
-echo "  ✓ 依赖已安装"
-
 # ============================================================
-# Step 3: 输入昵称
+# Step 2: 参赛者登录
 # ============================================================
 
 echo ""
-echo "[3/5] 参赛者登录"
+echo "[2/4] 参赛者登录"
 echo ""
-echo "  请输入你的参赛昵称（英文，用于标记你的所有记录）"
+echo "  请输入你的参赛昵称（英文字母/数字/下划线，最多20字符）"
 echo ""
 
 while true; do
     read -p "  昵称: " NICKNAME
     NICKNAME=$(echo "$NICKNAME" | tr -cd 'a-zA-Z0-9_-')
     if [ -z "$NICKNAME" ]; then
-        echo "  ⚠ 昵称不能为空，只支持英文字母/数字/下划线"
+        echo "  ⚠ 昵称不能为空"
         continue
     fi
     if [ ${#NICKNAME} -gt 20 ]; then
@@ -67,13 +62,29 @@ while true; do
 done
 
 echo "  ✓ 欢迎, $NICKNAME!"
+
+# 检查 API key
+if [ -z "$ZHIPU_API_KEY" ]; then
+    echo ""
+    echo "  请输入出题者提供的 API Key:"
+    read -r -p "  API Key: " USER_KEY
+    if [ -n "$USER_KEY" ]; then
+        export ZHIPU_API_KEY="$USER_KEY"
+    fi
+fi
+
+if [ -z "$ZHIPU_API_KEY" ]; then
+    echo "  ❌ 必须提供 API Key 才能使用 AI 助手"
+    exit 1
+fi
+echo "  ✓ API Key 已配置"
+
+# ============================================================
+# Step 3: 创建专属分支
+# ============================================================
+
 echo ""
-
-# ============================================================
-# Step 4: 创建专属分支
-# ============================================================
-
-echo "[4/5] 创建你的专属分支..."
+echo "[3/4] 创建你的专属分支..."
 
 BRANCH="participant/$NICKNAME"
 
@@ -93,43 +104,46 @@ fi
 RESULTS_DIR="$REPO_ROOT/results/$NICKNAME"
 mkdir -p "$RESULTS_DIR"
 
-# ============================================================
-# Step 5: 启动 CodeArena CLI
-# ============================================================
-
-echo "[5/5] 启动 CodeArena CLI..."
-echo ""
-echo "  ┌────────────────────────────────────────────┐"
-echo "  │  提示:                                      │"
-echo "  │  - 输入 start 开始挑战                      │"
-echo "  │  - 每完成一个 task 输入 /commit \"taskN: done\"│"
-echo "  │  - 输入 /quit 退出（结果自动上传）          │"
-echo "  └────────────────────────────────────────────┘"
-echo ""
-
-# 检查 API key
-if [ -z "$ZHIPU_API_KEY" ]; then
-    echo "  ⚠ 未设置 ZHIPU_API_KEY 环境变量"
-    echo "  请输入智谱 API Key（或按回车跳过，在 CLI 中配置）:"
-    read -p "  API Key: " USER_KEY
-    if [ -n "$USER_KEY" ]; then
-        export ZHIPU_API_KEY="$USER_KEY"
-    fi
-fi
-
-# 保存昵称到文件，供 arena.py 读取（跳过登录）
+# 保存昵称
 echo "$NICKNAME" > "$REPO_ROOT/.participant"
 
-# 启动 CLI
+# 记录挑战开始时间
+START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# ============================================================
+# Step 4: 启动 Zwei's CodeArena
+# ============================================================
+
+echo ""
+echo "[4/4] 启动 Zwei's CodeArena..."
+echo ""
+echo "  ┌──────────────────────────────────────────────────┐"
+echo "  │  使用指南:                                        │"
+echo "  │                                                   │"
+echo "  │  /task    — 查看当前挑战的任务列表               │"
+echo "  │  /finish  — 完成某个任务后登记完成               │"
+echo "  │                                                   │"
+echo "  │  让 AI 助手帮你逐个完成 Task                     │"
+echo "  │  完成后按 Ctrl+C 退出                            │"
+echo "  └──────────────────────────────────────────────────┘"
+echo ""
+
+# Resize terminal window wider (50 rows x 160 cols)
+printf '\e[8;50;160t' 2>/dev/null || true
+
+# 启动 CodeArena CLI（Ctrl+C 只退出 CLI，脚本继续执行收集流程）
 cd "$REPO_ROOT"
-python3 arena-cli/arena.py \
-    --challenges-dir "$REPO_ROOT" \
-    --log-dir "$RESULTS_DIR" \
-    --participant "$NICKNAME"
+set +e
+trap '' INT
+"$CODEARENA_BIN" || true
+trap - INT
+set -e
 
 # ============================================================
 # 退出后自动收集结果并上传
 # ============================================================
+
+END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 echo ""
 echo "  正在收集结果..."
@@ -138,16 +152,15 @@ echo "  正在收集结果..."
 CHALLENGE_DIR="$REPO_ROOT/challenges"
 if [ -d "$CHALLENGE_DIR" ]; then
     mkdir -p "$RESULTS_DIR/code"
-    # 复制参赛者写的所有文件（排除测试和题目文件）
+    # 复制参赛者写的所有文件（排除题目文件）
     for f in "$CHALLENGE_DIR"/*; do
         fname="$(basename "$f")"
         [ -f "$f" ] || continue
-        # 排除出题者的文件
         [[ "$fname" == "CHALLENGE.md" ]] && continue
         [[ "$fname" == test_* ]] && continue
         cp "$f" "$RESULTS_DIR/code/"
     done
-    # 复制子目录（starter 等）
+    # 复制子目录
     for d in "$CHALLENGE_DIR"/*/; do
         dname="$(basename "$d")"
         [[ "$dname" == "starter" ]] && continue
@@ -155,37 +168,122 @@ if [ -d "$CHALLENGE_DIR" ]; then
         cp -r "$d" "$RESULTS_DIR/code/" 2>/dev/null || true
     done
 
-    # 导出 commit 历史
+    # 导出 commit 历史（空文件 = 用户未做版本管理，本身也是评测信号）
     cd "$REPO_ROOT"
-    git log --pretty=format:'{"hash":"%h","date":"%ai","message":"%s"}' -- challenges/ > "$RESULTS_DIR/commits.json" 2>/dev/null || true
-
-    # 导出测试结果
-    cd "$CHALLENGE_DIR"
-    python3 -m pytest test_challenge.py -v --tb=short 2>&1 > "$RESULTS_DIR/test_results.txt" || true
-    cd "$REPO_ROOT"
-
-    # AI 交互日志已在 results 目录下（arena-cli 直接写到 --log-dir）
-    # 确认日志存在
-    if ls "$RESULTS_DIR"/*.jsonl 1>/dev/null 2>&1; then
-        echo "  ✓ AI 交互日志已保存"
+    COMMIT_DATA=$(git log --pretty=format:'{"hash":"%h","date":"%ai","message":"%s"}' -- challenges/ 2>/dev/null)
+    if [ -n "$COMMIT_DATA" ]; then
+        echo "$COMMIT_DATA" | sed 's/$/,/' | sed '1s/^/[/' | sed '$ s/,$/]/' > "$RESULTS_DIR/commits.json"
+        COMMIT_COUNT=$(echo "$COMMIT_DATA" | wc -l | tr -d ' ')
+        echo "  ✓ Git 历史: ${COMMIT_COUNT} 条 commit"
+    else
+        echo '{"git_managed": false, "note": "参赛者未使用 git 管理代码"}' > "$RESULTS_DIR/commits.json"
+        echo "  ⚠ 未检测到 git commit（将记录此信息）"
     fi
 fi
+
+# ---- 收集任务完成记录 (challenge-progress.json) ----
+PROGRESS_FILE="$HOME/.local/share/codearena/challenge-progress.json"
+if [ -f "$PROGRESS_FILE" ]; then
+    cp "$PROGRESS_FILE" "$RESULTS_DIR/challenge-progress.json"
+    echo "  ✓ 任务完成记录已收集"
+fi
+
+# ---- 收集 AI 对话日志 (opencode session DB + logs) ----
+OPENCODE_DATA="$HOME/.local/share/opencode"
+if [ -d "$OPENCODE_DATA" ]; then
+    mkdir -p "$RESULTS_DIR/ai-logs"
+
+    # 复制 SQLite 数据库（包含完整对话历史）
+    for db in "$OPENCODE_DATA"/opencode*.db; do
+        [ -f "$db" ] && cp "$db" "$RESULTS_DIR/ai-logs/" 2>/dev/null || true
+    done
+
+    # 复制本次运行的文本日志
+    if [ -d "$OPENCODE_DATA/log" ]; then
+        mkdir -p "$RESULTS_DIR/ai-logs/log"
+        cp "$OPENCODE_DATA/log/"* "$RESULTS_DIR/ai-logs/log/" 2>/dev/null || true
+    fi
+    echo "  ✓ AI 对话日志已收集"
+
+    # 导出 AI 对话为评测可读的 JSONL 格式
+    for db in "$RESULTS_DIR/ai-logs"/opencode*.db; do
+        [ -f "$db" ] || continue
+        DBNAME="$(basename "$db" .db)"
+        sqlite3 "$db" "
+            SELECT data FROM message ORDER BY time_created
+        " > "$RESULTS_DIR/ai-conversation-${DBNAME}.jsonl" 2>/dev/null || true
+    done
+    echo "  ✓ AI 对话 JSONL 已导出"
+fi
+
+# ---- 导出 agent/mode 切换时间线 ----
+if command -v sqlite3 &>/dev/null; then
+    for db in "$RESULTS_DIR/ai-logs"/opencode*.db; do
+        [ -f "$db" ] || continue
+        DBNAME="$(basename "$db" .db)"
+        sqlite3 "$db" "
+            SELECT json_object(
+                'timestamp', datetime(time_created/1000, 'unixepoch'),
+                'role', json_extract(data,'$.role'),
+                'agent', json_extract(data,'$.agent'),
+                'mode', json_extract(data,'$.mode'),
+                'model', json_extract(data,'$.modelID')
+            )
+            FROM message ORDER BY time_created
+        " | sed 's/$/,/' | sed '1s/^/[/' | sed '$ s/,$/]/' \
+          > "$RESULTS_DIR/agent-timeline-${DBNAME}.json" 2>/dev/null
+    done
+    echo "  ✓ Agent/Mode 切换时间线已收集"
+fi
+
+# ---- 汇总 token 消耗 ----
+if command -v sqlite3 &>/dev/null; then
+    for db in "$RESULTS_DIR/ai-logs"/opencode*.db; do
+        [ -f "$db" ] || continue
+        DBNAME="$(basename "$db" .db)"
+        sqlite3 "$db" "
+            SELECT json_object(
+                'total_input', SUM(json_extract(data,'$.tokens.input')),
+                'total_output', SUM(json_extract(data,'$.tokens.output')),
+                'total_reasoning', SUM(json_extract(data,'$.tokens.reasoning')),
+                'total_cache_read', SUM(json_extract(data,'$.tokens.cache.read')),
+                'total_cache_write', SUM(json_extract(data,'$.tokens.cache.write')),
+                'total_cost', ROUND(SUM(json_extract(data,'$.cost')), 4),
+                'message_count', COUNT(*)
+            )
+            FROM message
+            WHERE json_extract(data,'$.role') = 'assistant'
+        " > "$RESULTS_DIR/token-usage-${DBNAME}.json" 2>/dev/null
+    done
+    echo "  ✓ Token 消耗统计已收集"
+fi
+
+# ---- 写入时间戳元数据 ----
+cat > "$RESULTS_DIR/metadata.json" <<METAEOF
+{
+  "participant": "$NICKNAME",
+  "branch": "$BRANCH",
+  "startTime": "$START_TIME",
+  "endTime": "$END_TIME",
+  "durationSeconds": $(( $(date +%s) - $(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$START_TIME" +%s 2>/dev/null || echo 0) ))
+}
+METAEOF
+echo "  ✓ 时间戳元数据已写入"
 
 echo "  ✓ 结果已收集到 $RESULTS_DIR/"
 
 # Git 提交并推送
 echo "  正在上传结果..."
 cd "$REPO_ROOT"
-git add "results/$NICKNAME/" 2>/dev/null || true
+git add "results/$NICKNAME/" challenges/ 2>/dev/null || true
 git commit -m "results: $NICKNAME submission" 2>/dev/null || true
 
-# 尝试 push（可能因为没有远程权限失败，不是大问题）
+# 尝试 push
 if git push origin "$BRANCH" 2>/dev/null; then
     echo "  ✓ 结果已上传到 GitHub ($BRANCH)"
 else
     echo "  ⚠ 自动上传失败（可能没有 push 权限）"
     echo "  请手动运行: git push origin $BRANCH"
-    echo "  或把 results/$NICKNAME/ 文件夹发给出题者"
 fi
 
 echo ""
@@ -194,4 +292,4 @@ echo "  ║     感谢参与！结果已保存。       ║"
 echo "  ╚══════════════════════════════════╝"
 echo ""
 echo "  你的结果文件在: $RESULTS_DIR/"
-ls "$RESULTS_DIR/"
+ls "$RESULTS_DIR/" 2>/dev/null || echo "  (空)"

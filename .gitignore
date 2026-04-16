@@ -27,3 +27,9 @@ arena-cli/arena-logs/
 arena-logs/
 results/
 ._*
+
+# CodeArena binary (distributed separately, too large for git)
+bin/codearena
+
+# OpenCode config/state
+.opencode/
