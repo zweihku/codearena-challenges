@@ -354,18 +354,38 @@ cd "$REPO_ROOT"
 git add "results/$NICKNAME/" challenges/ 2>/dev/null || true
 git commit -m "results: $NICKNAME submission" 2>/dev/null || true
 
-# 尝试 push
-if git push origin "$BRANCH" 2>/dev/null; then
-    echo "  ✓ 结果已上传到 GitHub ($BRANCH)"
-else
-    echo "  ⚠ 自动上传失败（可能没有 push 权限）"
-    echo "  请手动运行: git push origin $BRANCH"
-fi
-
 echo ""
 echo "  ╔══════════════════════════════════╗"
 echo "  ║     感谢参与！结果已保存。       ║"
 echo "  ╚══════════════════════════════════╝"
 echo ""
-echo "  你的结果文件在: $RESULTS_DIR/"
-ls "$RESULTS_DIR/" 2>/dev/null || echo "  (空)"
+
+# ============================================================
+# 上传成功后自毁：清除本地代码和题目，防止泄露
+# ============================================================
+
+PUSH_OK=false
+if git push origin "$BRANCH" 2>/dev/null; then
+    PUSH_OK=true
+fi
+
+if [ "$PUSH_OK" = true ]; then
+    echo "  结果已安全上传，正在清理本地文件..."
+    # 清除 opencode 本地状态（对话历史、session DB）
+    rm -rf "$HOME/.local/share/opencode" 2>/dev/null
+    rm -rf "$HOME/.local/share/codearena" 2>/dev/null
+    # 回到上级目录再删除整个 repo
+    cd "$REPO_ROOT/.."
+    rm -rf "$REPO_ROOT"
+    echo "  ✓ 本地文件已清理完毕"
+    echo ""
+    echo "  你的挑战结果已上传到 GitHub ($BRANCH)"
+    echo "  本地代码和题目已自动清除。"
+else
+    echo "  ⚠ 上传失败，本地文件保留以便手动重试"
+    echo "  你的结果文件在: $RESULTS_DIR/"
+    ls "$RESULTS_DIR/" 2>/dev/null || echo "  (空)"
+    echo ""
+    echo "  手动上传: cd $REPO_ROOT && git push origin $BRANCH"
+    echo "  上传成功后可手动删除: rm -rf $REPO_ROOT"
+fi
