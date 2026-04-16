@@ -4,17 +4,27 @@ AI 编程能力评测平台。clone 下来，一键启动，完成挑战。
 
 ## 快速开始
 
+### 方式 A：Docker（推荐，零环境配置）
+
+只需要装了 Docker Desktop，其他什么都不用。
+
+```bash
+git clone https://github.com/zweihku/codearena-challenges.git
+cd codearena-challenges
+./docker-start.sh
+```
+
+### 方式 B：本地 Python
+
+需要 Python 3.10+ 和 Git。
+
 ```bash
 git clone https://github.com/zweihku/codearena-challenges.git
 cd codearena-challenges
 ./setup.sh
 ```
 
-`setup.sh` 会自动完成：
-1. 安装 Python 依赖
-2. 让你输入参赛昵称
-3. 创建你的专属分支
-4. 启动 CodeArena CLI
+两种方式进去后操作完全一样。
 
 ## 做题流程
 
@@ -68,9 +78,8 @@ Task 5-6  ★★★★   高手区
 
 ## 环境要求
 
-- Python 3.10+
-- Git
-- 网络连接（调用 AI API）
+**Docker 模式（推荐）：** 只需 Docker Desktop + 网络连接
+**本地模式：** Python 3.10+ + Git + 网络连接
 
 ## 有问题？
 
