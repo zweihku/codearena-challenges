@@ -361,18 +361,18 @@ def show_help():
     t.add_column("命令", style="cyan", width=22)
     t.add_column("说明")
 
-    t.add_row("[bold]/ask[/bold] <问题>", "问 AI 一个问题（也可以直接打字，不加 /ask）")
-    t.add_row("[bold]/read[/bold] <文件>", "读取文件内容并显示")
-    t.add_row("[bold]/edit[/bold] <文件>", "让 AI 编辑文件（AI 会给出修改后的完整内容）")
-    t.add_row("[bold]/run[/bold] <命令>", "执行 shell 命令（如 pytest, python weather.py 等）")
-    t.add_row("[bold]/test[/bold] [taskN]", "运行当前挑战的测试（可指定 task 编号）")
+    t.add_row("[bold]/task[/bold]", "查看 Task 列表和完成状态")
+    t.add_row("[bold]/finish[/bold] N", "标记 Task N 完成（自动 commit）")
+    t.add_row("[bold]/taskmd[/bold]", "查看完整挑战题目")
+    t.add_row("[bold]/read[/bold] <文件>", "读取文件内容")
+    t.add_row("[bold]/edit[/bold] <文件>", "让 AI 编辑文件")
+    t.add_row("[bold]/run[/bold] <命令>", "执行 shell 命令")
     t.add_row("[bold]/ls[/bold]", "列出当前目录文件")
     t.add_row("[bold]/commit[/bold] <msg>", "git add + commit")
-    t.add_row("[bold]/model[/bold] <名称>", "切换 AI 模型（如 glm-5.1, gpt-5.4）")
-    t.add_row("[bold]/status[/bold]", "查看当前会话状态")
-    t.add_row("[bold]/task[/bold]", "查看挑战题目")
+    t.add_row("[bold]/model[/bold] <名称>", "切换 AI 模型")
+    t.add_row("[bold]/status[/bold]", "查看会话状态（用时、对话次数）")
     t.add_row("[bold]/help[/bold]", "显示本帮助")
-    t.add_row("[bold]/quit[/bold]", "退出")
+    t.add_row("[bold]/quit[/bold]", "退出（结果自动上传）")
 
     console.print(t)
     console.print()
@@ -448,15 +448,46 @@ def run_session(participant: str, challenge_key: str, provider: str,
     logger = InteractionLogger(log_dir, participant)
     engine = ArenaEngine(provider, model, api_key, str(work_dir), challenge, logger)
 
-    # 初始化 git
-    git_dir = work_dir / ".git"
+    # 初始化 git（用 repo 根目录的 git，不在 challenges/ 下单独 init）
+    repo_root = base_dir
+    git_dir = repo_root / ".git"
     if not git_dir.exists():
-        subprocess.run(["git", "init"], cwd=str(work_dir),
+        subprocess.run(["git", "init"], cwd=str(repo_root),
                        capture_output=True, timeout=10)
-        subprocess.run(["git", "add", "-A"], cwd=str(work_dir),
+        subprocess.run(["git", "add", "-A"], cwd=str(repo_root),
                        capture_output=True, timeout=10)
         subprocess.run(["git", "commit", "-m", "init: challenge start"],
-                       cwd=str(work_dir), capture_output=True, timeout=10)
+                       cwd=str(repo_root), capture_output=True, timeout=10)
+
+    # 解析 CHALLENGE.md 中的 task 列表
+    tasks = []
+    challenge_file = work_dir / "CHALLENGE.md"
+    if challenge_file.exists():
+        for line in challenge_file.read_text(encoding="utf-8").split("\n"):
+            if line.startswith("## Task "):
+                # "## Task 1：基础对话入口" → {"num": 1, "title": "基础对话入口"}
+                parts = line.replace("## Task ", "").split("：", 1)
+                if not parts[0].strip()[0].isdigit():
+                    parts = line.replace("## Task ", "").split(":", 1)
+                num = ''.join(c for c in parts[0] if c.isdigit())
+                title = parts[1].strip() if len(parts) > 1 else parts[0].strip()
+                if num:
+                    tasks.append({"num": int(num), "title": title, "done": False})
+
+    task_status = {t["num"]: False for t in tasks}
+
+    def show_tasks():
+        """显示 task 列表和完成状态"""
+        if not tasks:
+            console.print("[yellow]未找到 task 列表[/yellow]")
+            return
+        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+        t.add_column(width=6)
+        t.add_column()
+        for task in tasks:
+            status = "[green]✓[/green]" if task_status.get(task["num"]) else "[dim]○[/dim]"
+            t.add_row(f"{status} Task {task['num']}", task["title"])
+        console.print(t)
 
     # 显示进入挑战信息
     console.print()
@@ -470,8 +501,15 @@ def run_session(participant: str, challenge_key: str, provider: str,
     info.add_row("日志", f"{log_dir}/{participant}.jsonl")
 
     console.print(Panel(info, title="[bold green]挑战开始[/bold green]", border_style="green"))
+
+    # 显示 task 列表
+    if tasks:
+        console.print()
+        console.print("[bold]Task 列表：[/bold]")
+        show_tasks()
+
     console.print()
-    console.print("[dim]输入 /help 查看命令  |  直接打字和 AI 对话  |  /quit 退出[/dim]")
+    console.print("[dim]/task 查看任务  |  /finish N 完成任务  |  /help 帮助  |  /quit 退出[/dim]")
     console.print()
 
     # 输入历史
@@ -512,6 +550,39 @@ def run_session(participant: str, challenge_key: str, provider: str,
             show_help()
             continue
 
+        elif user_input in ("/task", "/tasks", "task", "tasks"):
+            show_tasks()
+            continue
+
+        elif user_input.startswith("/finish"):
+            parts = user_input.split()
+            if len(parts) < 2 or not parts[1].isdigit():
+                console.print("[yellow]用法: /finish N（N 是 task 编号）[/yellow]")
+                continue
+            task_num = int(parts[1])
+            if task_num not in task_status:
+                console.print(f"[red]Task {task_num} 不存在[/red]")
+                continue
+            if task_status[task_num]:
+                console.print(f"[dim]Task {task_num} 已标记完成[/dim]")
+                continue
+            task_status[task_num] = True
+            for t in tasks:
+                if t["num"] == task_num:
+                    t["done"] = True
+            # 自动 commit
+            msg = f"task{task_num}: done"
+            console.print(f"[dim]$ git add -A && git commit -m \"{msg}\"[/dim]")
+            tool_run("git add -A", repo_root, logger)
+            output = tool_run(f'git commit -m "{msg}"', repo_root, logger)
+            console.print(output)
+            done_count = sum(1 for v in task_status.values() if v)
+            console.print(f"[green]✓ Task {task_num} 完成！({done_count}/{len(tasks)})[/green]")
+            logger.log(event_type="task_finish", tool_name="finish",
+                       tool_input=f"task{task_num}", tool_output=msg)
+            show_tasks()
+            continue
+
         elif user_input in ("/ls", "ls"):
             console.print(tool_ls(work_dir))
             continue
@@ -520,15 +591,18 @@ def run_session(participant: str, challenge_key: str, provider: str,
             elapsed = int(time.time() - start_time)
             mins, secs = divmod(elapsed, 60)
             stats = logger.get_stats()
+            done_count = sum(1 for v in task_status.values() if v)
             console.print(f"  参赛者: {participant}")
             console.print(f"  挑战: {challenge_key} - {challenge['name']}")
             console.print(f"  模型: {engine.model} ({engine.provider})")
             console.print(f"  用时: {mins}分{secs}秒")
+            console.print(f"  Task: {done_count}/{len(tasks)} 完成")
             console.print(f"  AI 对话: {stats['chats']} 次")
             console.print(f"  工具调用: {stats['tools']} 次")
             continue
 
-        elif user_input in ("/task", "task"):
+        elif user_input == "/taskmd":
+            # 查看完整题目
             challenge_file = work_dir / "CHALLENGE.md"
             if challenge_file.exists():
                 content = challenge_file.read_text(encoding="utf-8")
@@ -573,8 +647,8 @@ def run_session(participant: str, challenge_key: str, provider: str,
         elif user_input.startswith("/commit"):
             msg = user_input[7:].strip() or "update"
             console.print(f"[dim]$ git add -A && git commit -m \"{msg}\"[/dim]")
-            tool_run("git add -A", work_dir, logger)
-            output = tool_run(f'git commit -m "{msg}"', work_dir, logger)
+            tool_run("git add -A", repo_root, logger)
+            output = tool_run(f'git commit -m "{msg}"', repo_root, logger)
             console.print(output)
             continue
 
