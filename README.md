@@ -1,99 +1,61 @@
 # Zwei's CodeArena
 
-AI 编程能力评测。clone 下来，一键启动，完成挑战。
+AI 编程能力评测平台。参赛者在 AI 编程助手的辅助下完成编程挑战，全程记录并评测。
 
 ## 快速开始
 
-### 方式 A：Docker（推荐，零环境配置）
-
-只需要装了 Docker Desktop，其他什么都不用。
-
 ```bash
 git clone https://github.com/zweihku/codearena-challenges.git
 cd codearena-challenges
-./docker-start.sh
+bash setup.sh
 ```
 
-### 方式 B：本地 Python
-
-需要 Python 3.10+ 和 Git。
-
-```bash
-git clone https://github.com/zweihku/codearena-challenges.git
-cd codearena-challenges
-./setup.sh
-```
-
-两种方式进去后操作完全一样。
+启动后依次完成：
+1. 输入参赛昵称
+2. 输入出题者提供的 API Key
+3. 自动创建专属分支并进入 CodeArena TUI
 
 ## 做题流程
 
-### 1. 启动后配置 API Key
+进入 TUI 后，首页显示挑战主题和任务列表。
 
-首次进入需要配置 AI 模型（出题者会提供 API Key）：
+1. **阅读题目** — 打开 `challenges/CHALLENGE.md` 了解任务要求
+2. **和 AI 对话** — 直接打字向 AI 助手提出需求，让它帮你写代码
+3. **查看任务** — 输入 `/task` 查看任务列表
+4. **登记完成** — 完成一个 Task 后输入 `/finish 序号` 登记（如 `/finish 1`）
+5. **版本管理** — 建议每完成一个 Task 用 `git commit` 提交（这是评分项）
+6. **退出** — `Ctrl+C` 退出，结果自动收集并上传
 
-```
-Zwei's CodeArena > config
-```
-
-### 2. 输入 start 开始
-
-```
-Zwei's CodeArena > start
-```
-
-进入后会看到 Task 列表：
-
-```
-Task 列表：
-  ○ Task 1   基础对话入口
-  ○ Task 2   常见问题处理
-  ○ Task 3   上下文连续对话
-  ○ Task 4   人工转接
-  ○ Task 5   会话记录与查询
-  ○ Task 6   服务闭环
-```
-
-### 3. 做题
-
-直接打字和 AI 对话，或者用命令操作文件和终端。
-
-### 4. 完成 Task 后标记
-
-```
-[你的昵称] > /finish 1
-✓ Task 1 已标记完成 (1/6)
-```
-
-### 常用命令
+## 命令速查
 
 | 命令 | 说明 |
 |------|------|
-| 直接打字 | 和 AI 对话 |
-| `/task` | 查看 Task 列表和完成状态 |
-| `/finish N` | 标记 Task N 完成 |
-| `/read 文件名` | 读取文件内容 |
-| `/edit 文件名` | 让 AI 编辑文件 |
-| `python xxx.py` | 直接执行命令（自动识别） |
-| `git add / commit` | 直接执行 Git 命令 |
-| `/ls` | 列出目录文件 |
-| `/status` | 查看用时、Task 进度、对话次数 |
-| `/taskmd` | 查看完整题目描述 |
-| `/help` | 所有命令帮助 |
-| `/quit` | 退出（结果自动上传） |
+| 直接打字 | 和 AI 助手对话 |
+| `/task` | 查看任务列表 |
+| `/finish N` | 登记 Task N 完成 |
+| `/status` | 查看系统状态 |
+| `/help` | 查看帮助 |
+| `Ctrl+C` | 退出（自动收集结果） |
+
+## 评测维度
+
+挑战过程中以下数据会被自动记录用于评测：
+
+- **代码产出** — 你写的所有代码
+- **Git 历史** — commit 频率、质量、是否按 Task 分步提交
+- **AI 交互记录** — 你和 AI 的完整对话（prompt 质量、是否验证输出）
+- **Token 消耗** — AI 资源使用量
+- **模式切换** — Build/Plan 模式使用情况
+- **任务完成时间** — 每个 Task 的完成时间戳
+- **总耗时** — 挑战开始到退出的总时长
 
 ## 注意事项
 
 - 做到哪算哪，质量比数量重要
-- 所有 AI 交互会被记录，用于评测分析
-- 退出后结果自动上传
-- 具体题目见 `challenges/CHALLENGE.md`
+- AI 助手不会帮你读题，你需要自己阅读 CHALLENGE.md
+- 退出后结果自动上传到你的专属分支
 
 ## 环境要求
 
-**Docker 模式（推荐）：** 只需 Docker Desktop + 网络连接
-**本地模式：** Python 3.10+ + Git + 网络连接
-
-## 有问题？
-
-找出题者。
+- Git
+- 网络连接（调用 AI API）
