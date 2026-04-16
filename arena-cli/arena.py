@@ -332,13 +332,13 @@ def tool_ls(work_dir: Path) -> str:
 def show_welcome():
     """显示欢迎页"""
     title = Text()
-    title.append("  ██████╗ ██████╗ ██████╗ ███████╗\n", style="bold cyan")
-    title.append("  ██╔════╝██╔═══██╗██╔══██╗██╔════╝\n", style="bold cyan")
-    title.append("  ██║     ██║   ██║██║  ██║█████╗  \n", style="bold cyan")
-    title.append("  ██║     ██║   ██║██║  ██║██╔══╝  \n", style="bold cyan")
-    title.append("  ╚██████╗╚██████╔╝██████╔╝███████╗\n", style="bold cyan")
-    title.append("   ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝\n", style="bold cyan")
-    title.append("     Z w e i ' s   A R E N A", style="bold white")
+    title.append("  ███████╗██╗    ██╗███████╗██╗\n", style="bold cyan")
+    title.append("  ╚══███╔╝██║    ██║██╔════╝██║\n", style="bold cyan")
+    title.append("    ███╔╝ ██║ █╗ ██║█████╗  ██║\n", style="bold cyan")
+    title.append("   ███╔╝  ██║███╗██║██╔══╝  ██║\n", style="bold cyan")
+    title.append("  ███████╗╚███╔███╔╝███████╗██║\n", style="bold cyan")
+    title.append("  ╚══════╝ ╚══╝╚══╝ ╚══════╝╚═╝\n", style="bold cyan")
+    title.append("        C o d e A r e n a", style="bold white")
 
     console.print(Panel(title, border_style="cyan", padding=(1, 4)))
     console.print()
